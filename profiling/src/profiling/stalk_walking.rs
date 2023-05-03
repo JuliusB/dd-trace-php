@@ -2,7 +2,10 @@ use crate::bindings::{
     ddog_php_prof_zend_string_view, zend_execute_data, zend_function, zend_string,
     ZEND_USER_FUNCTION,
 };
+use log::debug;
+use std::ops::AddAssign;
 use std::str::Utf8Error;
+use std::time::{Duration, Instant, SystemTime};
 
 #[derive(Default, Debug)]
 pub struct ZendFrame {
@@ -94,6 +97,15 @@ unsafe fn collect_call_frame(execute_data: &zend_execute_data) -> Option<ZendFra
     None
 }
 
+pub(super) unsafe fn collect_timed_stack_sample(
+    top_execute_data: *mut zend_execute_data,
+) -> (Duration, Result<Vec<ZendFrame>, Utf8Error>) {
+    let instant = Instant::now();
+    let result = collect_stack_sample(top_execute_data);
+    let duration = instant.elapsed();
+    (duration, result)
+}
+
 pub(super) unsafe fn collect_stack_sample(
     top_execute_data: *mut zend_execute_data,
 ) -> Result<Vec<ZendFrame>, Utf8Error> {
@@ -122,4 +134,55 @@ pub(super) unsafe fn collect_stack_sample(
         execute_data_ptr = execute_data.prev_execute_data;
     }
     Ok(samples)
+}
+
+pub fn log_overhead(alloc_enabled: bool, stack_walk_overhead: &OverheadMetrics) {
+    let walks = stack_walk_overhead.wall_count;
+    if walks > 0 {
+        log_overhead_helper("wall", walks, stack_walk_overhead.wall_duration);
+    }
+
+    #[cfg(feature = "allocation_profiling")]
+    {
+        if alloc_enabled {
+            let walks = stack_walk_overhead.alloc_count;
+            if walks > 0 {
+                log_overhead_helper("alloc", walks, stack_walk_overhead.alloc_duration);
+            }
+        }
+    }
+}
+
+fn log_overhead_helper(reason: &str, walks: u64, duration: Duration) {
+    let duration_ns = duration.as_nanos();
+    let avg_duration_ns = duration_ns / walks as u128;
+    debug!("overhead stats; reason:{reason}, walks:{walks}, duration_ns:{duration_ns}, avg_duration_ns:{avg_duration_ns}")
+}
+
+#[derive(Debug, Default)]
+pub struct OverheadMetrics {
+    pub alloc_count: u64,
+    pub wall_count: u64,
+    pub alloc_duration: Duration,
+    pub wall_duration: Duration,
+}
+
+impl OverheadMetrics {
+    pub fn record_stack_walk(&mut self, reason: Reason, duration: Duration) {
+        match reason {
+            Reason::Alloc => {
+                self.alloc_count += 1;
+                self.alloc_duration.add_assign(duration);
+            }
+            Reason::Wall => {
+                self.wall_count += 1;
+                self.wall_duration.add_assign(duration);
+            }
+        }
+    }
+}
+
+pub enum Reason {
+    Alloc,
+    Wall,
 }

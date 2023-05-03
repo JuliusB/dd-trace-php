@@ -14,7 +14,7 @@ use lazy_static::lazy_static;
 use libc::c_char;
 use log::{debug, error, info, trace, warn, LevelFilter};
 use once_cell::sync::OnceCell;
-use profiling::{LocalRootSpanResourceMessage, Profiler, VmInterrupt};
+use profiling::{stalk_walking, LocalRootSpanResourceMessage, Profiler, VmInterrupt};
 use sapi::Sapi;
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -309,6 +309,7 @@ pub struct RequestLocals {
     pub profiling_experimental_allocation_enabled: bool,
     pub profiling_log_level: LevelFilter, // Only used for minfo
     pub service: Option<Cow<'static, str>>,
+    pub stack_walk_overhead: stalk_walking::OverheadMetrics,
     pub tags: Arc<Vec<Tag>>,
     pub uri: Box<AgentEndpoint>,
     pub version: Option<Cow<'static, str>>,
@@ -351,11 +352,11 @@ impl AllocationProfilingStats {
 
         REQUEST_LOCALS.with(|cell| {
             // Panic: there might already be a mutable reference to `REQUEST_LOCALS`
-            let locals = cell.try_borrow();
+            let locals = cell.try_borrow_mut();
             if locals.is_err() {
                 return;
             }
-            let locals = locals.unwrap();
+            let mut locals = locals.unwrap();
 
             if let Some(profiler) = PROFILER.lock().unwrap().as_ref() {
                 // Safety: execute_data was provided by the engine, and the profiler doesn't mutate it.
@@ -364,7 +365,7 @@ impl AllocationProfilingStats {
                         zend::ddog_php_prof_get_current_execute_data(),
                         1 as i64,
                         len as i64,
-                        &locals,
+                        locals.deref_mut(),
                     )
                 };
             }
@@ -395,6 +396,7 @@ thread_local! {
         profiling_experimental_allocation_enabled: true,
         profiling_log_level: LevelFilter::Off,
         service: None,
+        stack_walk_overhead: stalk_walking::OverheadMetrics::default(),
         tags: Arc::new(static_tags()),
         uri: Box::new(AgentEndpoint::default()),
         version: None,
@@ -738,6 +740,11 @@ extern "C" fn rshutdown(r#type: c_int, module_number: c_int) -> ZendResult {
                     warn!("Unable to find interrupt {err}.");
                 }
             }
+            stalk_walking::log_overhead(
+                locals.profiling_experimental_allocation_enabled,
+                &locals.stack_walk_overhead,
+            );
+            locals.stack_walk_overhead = stalk_walking::OverheadMetrics::default();
             locals.tags = Arc::new(static_tags());
         }
 

@@ -1,5 +1,5 @@
 mod interrupts;
-mod stalk_walking;
+pub mod stalk_walking;
 mod thread_utils;
 mod uploader;
 
@@ -237,7 +237,9 @@ impl TimeCollector {
 
         // check if we have the `alloc-size` and `alloc-samples` sample types
         #[cfg(feature = "allocation_profiling")]
-        let alloc_samples_offset = sample_types.iter().position(|&x| x.r#type == "alloc-samples");
+        let alloc_samples_offset = sample_types
+            .iter()
+            .position(|&x| x.r#type == "alloc-samples");
         #[cfg(feature = "allocation_profiling")]
         let alloc_size_offset = sample_types.iter().position(|&x| x.r#type == "alloc-size");
 
@@ -259,9 +261,10 @@ impl TimeCollector {
             let upscaling_info = UpscalingInfo::Poisson {
                 sum_value_offset: alloc_size_offset.unwrap(),
                 count_value_offset: alloc_samples_offset.unwrap(),
-                sampling_distance: ALLOCATION_PROFILING_INTERVAL as u64
+                sampling_distance: ALLOCATION_PROFILING_INTERVAL as u64,
             };
-            let values_offset: Vec<usize> = vec![alloc_size_offset.unwrap(), alloc_samples_offset.unwrap()];
+            let values_offset: Vec<usize> =
+                vec![alloc_size_offset.unwrap(), alloc_samples_offset.unwrap()];
             match profile.add_upscaling_rule(values_offset.as_slice(), "", "", upscaling_info) {
                 Ok(_id) => {}
                 Err(err) => {
@@ -564,7 +567,7 @@ impl Profiler {
     ) {
         // todo: should probably exclude the wall and CPU time used by collecting the sample.
         let interrupt_count = interrupt_count as i64;
-        let result = collect_stack_sample(execute_data);
+        let (duration, result) = collect_timed_stack_sample(execute_data);
         match result {
             Ok(frames) => {
                 let depth = frames.len();
@@ -613,6 +616,10 @@ impl Profiler {
                 warn!("Failed to collect stack sample: {err}")
             }
         }
+
+        locals
+            .stack_walk_overhead
+            .record_stack_walk(Reason::Wall, duration);
     }
 
     /// Collect a stack sample with memory allocations
@@ -622,9 +629,9 @@ impl Profiler {
         execute_data: *mut zend_execute_data,
         alloc_samples: i64,
         alloc_size: i64,
-        locals: &RequestLocals,
+        locals: &mut RequestLocals,
     ) {
-        let result = collect_stack_sample(execute_data);
+        let (duration, result) = collect_timed_stack_sample(execute_data);
         match result {
             Ok(frames) => {
                 let depth = frames.len();
@@ -653,6 +660,10 @@ impl Profiler {
                 warn!("Failed to collect stack sample: {err}")
             }
         }
+
+        locals
+            .stack_walk_overhead
+            .record_stack_walk(Reason::Alloc, duration);
     }
 
     fn message_labels() -> Vec<Label> {
