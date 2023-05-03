@@ -5,7 +5,7 @@ use crate::bindings::{
 use log::debug;
 use std::ops::AddAssign;
 use std::str::Utf8Error;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 #[derive(Default, Debug)]
 pub struct ZendFrame {

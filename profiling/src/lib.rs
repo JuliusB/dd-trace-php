@@ -396,7 +396,7 @@ thread_local! {
         profiling_experimental_allocation_enabled: true,
         profiling_log_level: LevelFilter::Off,
         service: None,
-        stack_walk_overhead: stalk_walking::OverheadMetrics::default(),
+        stack_walk_overhead: Default::default(),
         tags: Arc::new(static_tags()),
         uri: Box::new(AgentEndpoint::default()),
         version: None,
