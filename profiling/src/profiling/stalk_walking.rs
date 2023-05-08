@@ -136,29 +136,6 @@ pub(super) unsafe fn collect_stack_sample(
     Ok(samples)
 }
 
-pub fn log_overhead(alloc_enabled: bool, stack_walk_overhead: &OverheadMetrics) {
-    let walks = stack_walk_overhead.wall_count;
-    if walks > 0 {
-        log_overhead_helper("wall", walks, stack_walk_overhead.wall_duration);
-    }
-
-    #[cfg(feature = "allocation_profiling")]
-    {
-        if alloc_enabled {
-            let walks = stack_walk_overhead.alloc_count;
-            if walks > 0 {
-                log_overhead_helper("alloc", walks, stack_walk_overhead.alloc_duration);
-            }
-        }
-    }
-}
-
-fn log_overhead_helper(reason: &str, walks: u64, duration: Duration) {
-    let duration_ns = duration.as_nanos();
-    let avg_duration_ns = duration_ns / walks as u128;
-    debug!("overhead stats; reason:{reason}, walks:{walks}, duration_ns:{duration_ns}, avg_duration_ns:{avg_duration_ns}")
-}
-
 #[derive(Debug, Default)]
 pub struct OverheadMetrics {
     pub alloc_count: u64,
@@ -177,6 +154,29 @@ impl OverheadMetrics {
             Reason::Wall => {
                 self.wall_count += 1;
                 self.wall_duration.add_assign(duration);
+            }
+        }
+    }
+
+    fn log_overhead_helper(reason: &str, walks: u64, duration: Duration) {
+        let duration_ns = duration.as_nanos();
+        let avg_duration_ns = duration_ns / walks as u128;
+        debug!("overhead stats; reason:{reason}, walks:{walks}, duration_ns:{duration_ns}, avg_duration_ns:{avg_duration_ns}")
+    }
+
+    pub fn log_overhead(&self, alloc_enabled: bool) {
+        let walks = self.wall_count;
+        if walks > 0 {
+            Self::log_overhead_helper("wall", walks, self.wall_duration);
+        }
+
+        #[cfg(feature = "allocation_profiling")]
+        {
+            if alloc_enabled {
+                let walks = self.alloc_count;
+                if walks > 0 {
+                    Self::log_overhead_helper("alloc", walks, self.alloc_duration);
+                }
             }
         }
     }

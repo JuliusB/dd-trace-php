@@ -739,10 +739,9 @@ extern "C" fn rshutdown(r#type: c_int, module_number: c_int) -> ZendResult {
                     warn!("Unable to find interrupt {err}.");
                 }
             }
-            stalk_walking::log_overhead(
-                locals.profiling_experimental_allocation_enabled,
-                &locals.stack_walk_overhead,
-            );
+            locals
+                .stack_walk_overhead
+                .log_overhead(locals.profiling_experimental_allocation_enabled);
             locals.stack_walk_overhead = stalk_walking::OverheadMetrics::default();
             locals.tags = Arc::new(static_tags());
         }
